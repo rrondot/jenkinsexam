@@ -7,18 +7,7 @@ pipeline {
     }
     agent any
     stages {
-        stage('Print Branch') {
-            steps {
-                echo "Current branch: ${env.GIT_BRANCH}"
-                // Additional debug to check the exact value
-                script {
-                    def branch = env.GIT_BRANCH ?: 'unknown'
-                    echo "Raw GIT_BRANCH value: '${branch}'"
-                    echo "Length of GIT_BRANCH: ${branch.length()}"
-                    echo "Trimmed GIT_BRANCH: '${branch.trim()}'"
-                }
-            }
-        }
+      
         stage('Docker Build Cast') {
             steps {
                 script {
@@ -173,50 +162,52 @@ pipeline {
             }
         }
         stage('Deploiement en prod') {
-            when {
-                branch 'origin/master' // Verify this matches the exact output from Print Branch
-            }
-            environment {
-                KUBECONFIG = credentials("config")
-            }
-            steps {
-                script {
-                    // Debug branch right before the deployment
-                    echo "Checking branch before prod deployment: ${env.GIT_BRANCH}"
-                    input message: 'Deploy to production?', ok: 'Deploy'
-                    sh '''
-                    rm -Rf .kube
-                    mkdir .kube
-                    ls
-                    cat $KUBECONFIG > .kube/config
-                    '''
-                    sh '''
-                    cp castdb/values.yaml castdb-values.yml
-                    cat castdb-values.yml
-                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
-                    helm upgrade --install castdb castdb --values=castdb-values.yml --namespace prod
-                    '''
-                    sh '''
-                    cp moviedb/values.yaml moviedb-values.yml
-                    cat moviedb-values.yml
-                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
-                    helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace prod
-                    '''
-                    sh '''
-                    cp cast-service/values.yaml cast-service-values.yml
-                    cat cast-service-values.yml
-                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
-                    helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace prod
-                    '''
-                    sh '''
-                    cp movie-service/values.yaml movie-service-values.yml
-                    cat movie-service-values.yml
-                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
-                    helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace prod
-                    '''
-                }
-            }
+    when {
+        expression {
+            env.GIT_BRANCH.trim() == 'master'
         }
+    }
+    environment {
+        KUBECONFIG = credentials("config")
+    }
+    steps {
+        script {
+            // Debug branch right before the deployment
+            echo "Checking branch before prod deployment: ${env.GIT_BRANCH}"
+            input message: 'Deploy to production?', ok: 'Deploy'
+            sh '''
+                rm -Rf .kube
+                mkdir .kube
+                ls
+                cat $KUBECONFIG > .kube/config
+            '''
+            sh '''
+                cp castdb/values.yaml castdb-values.yml
+                cat castdb-values.yml
+                sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
+                helm upgrade --install castdb castdb --values=castdb-values.yml --namespace prod
+            '''
+            sh '''
+                cp moviedb/values.yaml moviedb-values.yml
+                cat moviedb-values.yml
+                sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
+                helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace prod
+            '''
+            sh '''
+                cp cast-service/values.yaml cast-service-values.yml
+                cat cast-service-values.yml
+                sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
+                helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace prod
+            '''
+            sh '''
+                cp movie-service/values.yaml movie-service-values.yml
+                cat movie-service-values.yml
+                sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
+                helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace prod
+            '''
+        }
+    }
+}
     }
     post {
         success {
