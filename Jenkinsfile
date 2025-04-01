@@ -47,46 +47,16 @@ pipeline {
             }
         }
 
-        stage('Deployment in dev') {
+        stage('Deployment') {
             environment {
                 KUBECONFIG = credentials("config")
             }
             steps {
                 script {
-                    deployNamespace("dev")
-                }
-            }
-        }
-
-        stage('Deployment in qa') {
-            environment {
-                KUBECONFIG = credentials("config")
-            }
-            steps {
-                script {
-                    deployNamespace("qa")
-                }
-            }
-        }
-
-        stage('Deployment in staging') {
-            environment {
-                KUBECONFIG = credentials("config")
-            }
-            steps {
-                script {
-                    deployNamespace("staging")
-                }
-            }
-        }
-
-        stage('Deployment in prod') {
-            environment {
-                KUBECONFIG = credentials("config")
-            }
-            steps {
-                script {
-                    deployNamespace("prod")
+                    def namespaces = ["dev", "qa", "staging", "prod"]
+                    for (namespace in namespaces) {
+                        deployNamespace(namespace)
+                    }
                 }
             }
         }
@@ -94,60 +64,73 @@ pipeline {
 }
 
 def deployNamespace(namespace) {
-    sh '''
-    rm -Rf .kube
-    mkdir .kube
-    ls
-    cat $KUBECONFIG > .kube/config
-    '''
+    script {
+        sh """
+        rm -Rf .kube
+        mkdir .kube
+        ls
+        cat $KUBECONFIG > .kube/config
+        """
 
-    createPersistentVolume(namespace)
-    createPersistentVolumeClaim(namespace)
+        createPersistentVolume(namespace)
+        createPersistentVolumeClaim(namespace)
 
-    deployHelm(namespace, "castdb")
-    deployHelm(namespace, "moviedb")
-    deployHelm(namespace, "cast-service")
-    deployHelm(namespace, "movie-service")
+        deployHelm(namespace, "castdb")
+        deployHelm(namespace, "moviedb")
+        deployHelm(namespace, "cast-service")
+        deployHelm(namespace, "movie-service")
+    }
 }
 
 def createPersistentVolume(namespace) {
-    sh """
-    cat <<EOF | kubectl apply -f -
-    apiVersion: v1
-    kind: PersistentVolume
-    metadata:
-      name: cast-db-volume-${namespace}
-    spec:
-      capacity:
-        storage: 10Gi
-      accessModes:
-        - ReadWriteOnce
-      persistentVolumeReclaimPolicy: Retain
-      hostPath:
-        path: "/mnt/data/cast-db-volume-${namespace}"
-    EOF
-    """
+    script {
+        sh """
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: PersistentVolume
+        metadata:
+          name: cast-db-volume-${namespace}
+        spec:
+          capacity:
+            storage: 10Gi
+          accessModes:
+            - ReadWriteOnce
+          persistentVolumeReclaimPolicy: Retain
+          hostPath:
+            path: "/mnt/data/cast-db-volume-${namespace}"
+        EOF
+        """
+    }
 }
 
 def createPersistentVolumeClaim(namespace) {
-    sh """
-    cat <<EOF | kubectl apply -f -
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: cast-db-pvc-${namespace}
-      namespace: ${namespace}
-    spec:
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 10Gi
-      volumeName: cast-db-volume-${namespace}
-    EOF
-    """
+    script {
+        sh """
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: cast-db-pvc-${namespace}
+          namespace: ${namespace}
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+          volumeName: cast-db-volume-${namespace}
+        EOF
+        """
+    }
 }
 
 def deployHelm(namespace, service) {
-    sh """
-    cp ${service}/values.yaml ${service}-values.yml
+    script {
+        sh """
+        cp ${service}/values.yaml ${service}-values.yml
+        cat ${service}-values.yml
+        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" ${service}-values.yml
+        helm upgrade --install ${service} ${service} --values=${service}-values.yml --namespace ${namespace}
+        """
+    }
+}
