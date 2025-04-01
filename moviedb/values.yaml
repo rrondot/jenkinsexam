@@ -1,0 +1,16 @@
+appName: movie-db
+
+serviceName: movie-db
+
+configmap:
+  name: moviedb-secret
+  data:
+    POSTGRES_DB: movie_db_dev
+    POSTGRES_USER: movie_db_username
+    POSTGRES_PASSWORD: movie_db_password
+
+
+
+
+
+

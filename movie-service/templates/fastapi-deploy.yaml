@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.appName }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}
+    spec:
+      containers:
+        - name: {{ .Values.appName }}
+          image: rrondot/movie-service
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: DATABASE_URI
+              value: "postgresql://movie_db_username:movie_db_password@movie-db/movie_db_dev"
+            - name: CAST_SERVICE_HOST_URL
+              value: "http://cast-service:8000/api/v1/casts/"
+          command: ["uvicorn"]
+          args: ["app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Values.appName }}-service"
+  labels:
+    app: {{ .Values.appName }}
+spec:
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - protocol: TCP
+      port: 8000
+  type: NodePort

@@ -1,0 +1,17 @@
+appName: cast-db
+
+serviceName: cast-db
+
+configmap:
+  name: cast-secret
+  data:
+    POSTGRES_DB: cast_db_dev
+    POSTGRES_USER: cast_db_username
+    POSTGRES_PASSWORD: cast_db_password
+
+
+
+
+
+
+
