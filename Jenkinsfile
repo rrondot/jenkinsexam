@@ -6,12 +6,13 @@ pipeline {
         DOCKER_TAG = "v.${BUILD_ID}.0" // tag images with the current build number
     }
     agent any // Jenkins will be able to select all available agents
-    stage('Print Branch') {
-    steps {
-        echo "Current branch: ${env.GIT_BRANCH}"
-    }
-}
+    
     stages {
+        stage('Print Branch') {
+            steps {
+                echo "Current branch: ${env.GIT_BRANCH}"
+            }
+        }
         stage('Docker Build Cast') { // Docker build image stage
             steps {
                 script {
