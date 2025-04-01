@@ -180,14 +180,14 @@ pipeline {
         }
         stage('Deploiement en prod') {
             when {
-                branch 'master' // Only deploy to prod from master branch
+                branch 'origin/master' // Only deploy to prod from master branch
             }
             environment {
                 KUBECONFIG = credentials("config") // Retrieve kubeconfig from Jenkins secret file
             }
             steps {
                 script {
-                    // Manual approval before deployment
+
                     input message: 'Deploy to production?', ok: 'Deploy'
                     
                     sh '''
@@ -228,12 +228,5 @@ pipeline {
             }
         }
     }
-    post {
-        success {
-            echo 'Pipeline completed successfully!'
-        }
-        failure {
-            echo 'Pipeline failed.'
-        }
-    }
+
 }
