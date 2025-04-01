@@ -1,252 +1,252 @@
 pipeline {
-environment { // Declaration of environment variables
-DOCKER_ID = "rrondot" // replace this with your docker-id
-DOCKER_IMAGE = "cast-service"
-DOCKER_IMAGE2 = "movie-service"
-DOCKER_TAG = "v.${BUILD_ID}.0" // we will tag our images with the current build in order to increment the value by 1 with each new build
-}
-agent any // Jenkins will be able to select all available agents
-stages {
-        stage(' Docker Build Cast'){ // docker build image stage
+    environment {
+        DOCKER_ID = "rrondot"
+        DOCKER_IMAGE = "cast-service"
+        DOCKER_IMAGE2 = "movie-service"
+        DOCKER_TAG = "v.${BUILD_ID}.0"
+    }
+
+    agent any
+
+    stages {
+        stage('Docker Build & Push') {
             steps {
                 script {
-                sh '''
-                 docker rm -f jenkins
-                 docker build -t $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG . -f app/cast-service/Dockerfile
-                sleep 6
-                '''
-                }
-            }
-        }
-       stage(' Docker Build Movie'){ // docker build image stage
-            steps {
-                script {
-                sh '''
-                 docker rm -f jenkins
-                 docker build -t $DOCKER_ID/$DOCKER_IMAGE2:$DOCKER_TAG . -f app/movie-service/Dockerfile
-                sleep 6
-                '''
+                    sh '''
+                    docker build -t $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG . -f app/cast-service/Dockerfile
+                    docker build -t $DOCKER_ID/$DOCKER_IMAGE2:$DOCKER_TAG . -f app/movie-service/Dockerfile
+                    docker login -u $DOCKER_ID -p $(cat /run/secrets/DOCKER_HUB_PASS)
+                    docker push $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
+                    docker push $DOCKER_ID/$DOCKER_IMAGE2:$DOCKER_TAG
+                    '''
                 }
             }
         }
 
-        stage('Docker Push'){ //we pass the built image to our docker hub account
-            environment
-            {
-                DOCKER_PASS = credentials("DOCKER_HUB_PASS") // we retrieve  docker password from secret text called docker_hub_pass saved on jenkins
+        stage('Deploy to dev') {
+            environment {
+                KUBECONFIG = credentials("config")
             }
-
             steps {
-
                 script {
-                sh '''
-                docker login -u $DOCKER_ID -p $DOCKER_PASS
-                docker push $DOCKER_ID/$DOCKER_IMAGE:$DOCKER_TAG
-                docker push $DOCKER_ID/$DOCKER_IMAGE2:$DOCKER_TAG
-                '''
+                    sh '''
+                    rm -Rf .kube
+                    mkdir .kube
+                    cat $KUBECONFIG > .kube/config
+                    '''
+
+                    // Create PersistentVolume and PersistentVolumeClaim for dev
+                    sh '''
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolume
+                    metadata:
+                      name: cast-db-volume-dev
+                    spec:
+                      capacity:
+                        storage: 10Gi
+                      accessModes:
+                        - ReadWriteOnce
+                      persistentVolumeReclaimPolicy: Retain
+                      hostPath:
+                        path: "/mnt/data/cast-db-volume-dev"
+                    EOF
+
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolumeClaim
+                    metadata:
+                      name: cast-db-pvc-dev
+                      namespace: dev
+                    spec:
+                      accessModes:
+                        - ReadWriteOnce
+                      resources:
+                        requests:
+                          storage: 10Gi
+                      volumeName: cast-db-volume-dev
+                    EOF
+                    '''
+
+                    // Deploy services in dev
+                    deployHelm("dev")
                 }
             }
-
         }
 
-stage('Deploiement en dev'){
-        environment
-        {
-        KUBECONFIG = credentials("config") // we retrieve  kubeconfig from secret file called config saved on jenkins
-        }
+        stage('Deploy to qa') {
+            environment {
+                KUBECONFIG = credentials("config")
+            }
             steps {
-    script {
-        sh '''
-        rm -Rf .kube
-        mkdir .kube
-        ls
-        cat $KUBECONFIG > .kube/config
-        '''
+                script {
+                    sh '''
+                    rm -Rf .kube
+                    mkdir .kube
+                    cat $KUBECONFIG > .kube/config
+                    '''
 
-        // Deploy castdb
-        sh '''
-        cp castdb/values.yaml castdb-values.yml
-        cat castdb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
-        helm upgrade --install castdb castdb --values=castdb-values.yml --namespace dev
-        '''
+                    // Create PersistentVolume and PersistentVolumeClaim for qa
+                    sh '''
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolume
+                    metadata:
+                      name: cast-db-volume-qa
+                    spec:
+                      capacity:
+                        storage: 10Gi
+                      accessModes:
+                        - ReadWriteOnce
+                      persistentVolumeReclaimPolicy: Retain
+                      hostPath:
+                        path: "/mnt/data/cast-db-volume-qa"
+                    EOF
 
-        // Deploy moviedb
-        sh '''
-        cp moviedb/values.yaml moviedb-values.yml
-        cat moviedb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
-        helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace dev
-        '''
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolumeClaim
+                    metadata:
+                      name: cast-db-pvc-qa
+                      namespace: qa
+                    spec:
+                      accessModes:
+                        - ReadWriteOnce
+                      resources:
+                        requests:
+                          storage: 10Gi
+                      volumeName: cast-db-volume-qa
+                    EOF
+                    '''
 
-        // Deploy cast-service
-        sh '''
-        cp cast-service/values.yaml cast-service-values.yml
-        cat cast-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
-        helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace dev
-        '''
+                    // Deploy services in qa
+                    deployHelm("qa")
+                }
+            }
+        }
 
-        // Deploy movie-service
-        sh '''
-        cp movie-service/values.yaml movie-service-values.yml
-        cat movie-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
-        helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace dev
-        '''
+        stage('Deploy to staging') {
+            environment {
+                KUBECONFIG = credentials("config")
+            }
+            steps {
+                script {
+                    sh '''
+                    rm -Rf .kube
+                    mkdir .kube
+                    cat $KUBECONFIG > .kube/config
+                    '''
+
+                    // Create PersistentVolume and PersistentVolumeClaim for staging
+                    sh '''
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolume
+                    metadata:
+                      name: cast-db-volume-staging
+                    spec:
+                      capacity:
+                        storage: 10Gi
+                      accessModes:
+                        - ReadWriteOnce
+                      persistentVolumeReclaimPolicy: Retain
+                      hostPath:
+                        path: "/mnt/data/cast-db-volume-staging"
+                    EOF
+
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolumeClaim
+                    metadata:
+                      name: cast-db-pvc-staging
+                      namespace: staging
+                    spec:
+                      accessModes:
+                        - ReadWriteOnce
+                      resources:
+                        requests:
+                          storage: 10Gi
+                      volumeName: cast-db-volume-staging
+                    EOF
+                    '''
+
+                    // Deploy services in staging
+                    deployHelm("staging")
+                }
+            }
+        }
+
+        stage('Deploy to prod') {
+            environment {
+                KUBECONFIG = credentials("config")
+            }
+            steps {
+                script {
+                    sh '''
+                    rm -Rf .kube
+                    mkdir .kube
+                    cat $KUBECONFIG > .kube/config
+                    '''
+
+                    // Create PersistentVolume and PersistentVolumeClaim for prod
+                    sh '''
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolume
+                    metadata:
+                      name: cast-db-volume-prod
+                    spec:
+                      capacity:
+                        storage: 10Gi
+                      accessModes:
+                        - ReadWriteOnce
+                      persistentVolumeReclaimPolicy: Retain
+                      hostPath:
+                        path: "/mnt/data/cast-db-volume-prod"
+                    EOF
+
+                    cat <<EOF | kubectl apply -f -
+                    apiVersion: v1
+                    kind: PersistentVolumeClaim
+                    metadata:
+                      name: cast-db-pvc-prod
+                      namespace: prod
+                    spec:
+                      accessModes:
+                        - ReadWriteOnce
+                      resources:
+                        requests:
+                          storage: 10Gi
+                      volumeName: cast-db-volume-prod
+                    EOF
+                    '''
+
+                    // Deploy services in prod
+                    deployHelm("prod")
+                }
+            }
+        }
     }
 }
 
+// Function to deploy all services in a given namespace
+def deployHelm(namespace) {
+    sh """
+    cp castdb/values.yaml castdb-values.yml
+    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
+    sed -i "s+cast-db-volume+cast-db-volume-${namespace}+g" castdb-values.yml
+    helm upgrade --install castdb castdb --values=castdb-values.yml --namespace ${namespace}
 
+    cp moviedb/values.yaml moviedb-values.yml
+    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
+    helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace ${namespace}
 
-}
-stage('Deploiement en qa'){
-        environment
-        {
-        KUBECONFIG = credentials("config") // we retrieve  kubeconfig from secret file called config saved on jenkins
-        }
-            steps {
-    script {
-        sh '''
-        rm -Rf .kube
-        mkdir .kube
-        ls
-        cat $KUBECONFIG > .kube/config
-        '''
+    cp cast-service/values.yaml cast-service-values.yml
+    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
+    helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace ${namespace}
 
-        // Deploy castdb
-        sh '''
-        cp castdb/values.yaml castdb-values.yml
-        cat castdb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
-        helm upgrade --install castdb castdb --values=castdb-values.yml --namespace qa
-        '''
-
-        // Deploy moviedb
-        sh '''
-        cp moviedb/values.yaml moviedb-values.yml
-        cat moviedb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
-        helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace qa
-        '''
-
-        // Deploy cast-service
-        sh '''
-        cp cast-service/values.yaml cast-service-values.yml
-        cat cast-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
-        helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace qa
-        '''
-
-        // Deploy movie-service
-        sh '''
-        cp movie-service/values.yaml movie-service-values.yml
-        cat movie-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
-        helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace qa
-        '''
-    }
-}
-
-
-
-}
-stage('Deploiement en staging'){
-        environment
-        {
-        KUBECONFIG = credentials("config") // we retrieve  kubeconfig from secret file called config saved on jenkins
-        }
-            steps {
-    script {
-        sh '''
-        rm -Rf .kube
-        mkdir .kube
-        ls
-        cat $KUBECONFIG > .kube/config
-        '''
-
-        // Deploy castdb
-        sh '''
-        cp castdb/values.yaml castdb-values.yml
-        cat castdb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
-        helm upgrade --install castdb castdb --values=castdb-values.yml --namespace staging
-        '''
-
-        // Deploy moviedb
-        sh '''
-        cp moviedb/values.yaml moviedb-values.yml
-        cat moviedb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
-        helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace staging
-        '''
-
-        // Deploy cast-service
-        sh '''
-        cp cast-service/values.yaml cast-service-values.yml
-        cat cast-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
-        helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace staging
-        '''
-
-        // Deploy movie-service
-        sh '''
-        cp movie-service/values.yaml movie-service-values.yml
-        cat movie-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
-        helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace staging
-        '''
-    }
-}
-}
-stage('Deploiement en prod'){
-        environment
-        {
-        KUBECONFIG = credentials("config") // we retrieve  kubeconfig from secret file called config saved on jenkins
-        }
-            steps {
-    script {
-        sh '''
-        rm -Rf .kube
-        mkdir .kube
-        ls
-        cat $KUBECONFIG > .kube/config
-        '''
-
-        // Deploy castdb
-        sh '''
-        cp castdb/values.yaml castdb-values.yml
-        cat castdb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
-        helm upgrade --install castdb castdb --values=castdb-values.yml --namespace prod
-        '''
-
-        // Deploy moviedb
-        sh '''
-        cp moviedb/values.yaml moviedb-values.yml
-        cat moviedb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
-        helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace prod
-        '''
-
-        // Deploy cast-service
-        sh '''
-        cp cast-service/values.yaml cast-service-values.yml
-        cat cast-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
-        helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace prod
-        '''
-
-        //  Deploy movie-service
-        sh '''
-        cp movie-service/values.yaml movie-service-values.yml
-        cat movie-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
-        helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace prod
-        '''
-    }
-}
-}
-
-}
+    cp movie-service/values.yaml movie-service-values.yml
+    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
+    helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace ${namespace}
+    """
 }
