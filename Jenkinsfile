@@ -237,7 +237,7 @@ stage('Deploiement en prod'){
         helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace prod
         '''
 
-        // Deploy movie-service
+        //  Deploy movie-service
         sh '''
         cp movie-service/values.yaml movie-service-values.yml
         cat movie-service-values.yml
