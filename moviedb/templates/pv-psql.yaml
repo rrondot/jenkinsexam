@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: "{{ .Values.appName }}-volume"
+  name: "{{ .Release.Namespace }}-movie-db-volume"
   labels:
     type: local
     app: {{ .Values.appName }}
@@ -13,3 +13,6 @@ spec:
     - ReadWriteMany
   hostPath:
     path: /data/postgresql2
+
+
+    
