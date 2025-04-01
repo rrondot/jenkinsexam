@@ -198,55 +198,64 @@ stage('Deploiement en staging'){
         '''
     }
 }
-}
-stage('Deploiement en prod'){
-        environment
-        {
-        KUBECONFIG = credentials("config") // we retrieve  kubeconfig from secret file called config saved on jenkins
-        }
+
+ stages {
+        stage('Deploiement en prod') {
+
+            when {
+                branch 'master'
+            }
             steps {
-    script {
-        sh '''
-        rm -Rf .kube
-        mkdir .kube
-        ls
-        cat $KUBECONFIG > .kube/config
-        '''
+                script {
+             
+                    input message: 'Deploy to production?', ok: 'Deploy'
+                }
+                environment {
+                    KUBECONFIG = credentials("config")
+                }
+                script {
+                    sh '''
+                    rm -Rf .kube
+                    mkdir .kube
+                    ls
+                    cat $KUBECONFIG > .kube/config
+                    '''
 
-        // Deploy castdb
-        sh '''
-        cp castdb/values.yaml castdb-values.yml
-        cat castdb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
-        helm upgrade --install castdb castdb --values=castdb-values.yml --namespace prod
-        '''
+                    // Deploy castdb
+                    sh '''
+                    cp castdb/values.yaml castdb-values.yml
+                    cat castdb-values.yml
+                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
+                    helm upgrade --install castdb castdb --values=castdb-values.yml --namespace prod
+                    '''
 
-        // Deploy moviedb
-        sh '''
-        cp moviedb/values.yaml moviedb-values.yml
-        cat moviedb-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
-        helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace prod
-        '''
+                    // Deploy moviedb
+                    sh '''
+                    cp moviedb/values.yaml moviedb-values.yml
+                    cat moviedb-values.yml
+                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
+                    helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace prod
+                    '''
 
-        // Deploy cast-service
-        sh '''
-        cp cast-service/values.yaml cast-service-values.yml
-        cat cast-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
-        helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace prod
-        '''
+                    // Deploy cast-service
+                    sh '''
+                    cp cast-service/values.yaml cast-service-values.yml
+                    cat cast-service-values.yml
+                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
+                    helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace prod
+                    '''
 
-        // Deploy movie-service
-        sh '''
-        cp movie-service/values.yaml movie-service-values.yml
-        cat movie-service-values.yml
-        sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
-        helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace prod
-        '''
+                    // Deploy movie-service
+                    sh '''
+                    cp movie-service/values.yaml movie-service-values.yml
+                    cat movie-service-values.yml
+                    sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" movie-service-values.yml
+                    helm upgrade --install movie-service movie-service --values=movie-service-values.yml --namespace prod
+                    '''
+                }
+            }
+        }
     }
-}
-}
 
 }
 }
