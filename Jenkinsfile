@@ -164,7 +164,7 @@ pipeline {
         stage('Deploiement en prod') {
     when {
         expression {
-            env.GIT_BRANCH.trim() == 'master'
+            env.GIT_BRANCH.trim().contains('master')
         }
     }
     environment {
