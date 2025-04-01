@@ -1,19 +1,25 @@
 pipeline {
-    environment { // Declaration of environment variables
-        DOCKER_ID = "rrondot" // replace this with your docker-id
+    environment {
+        DOCKER_ID = "rrondot"
         DOCKER_IMAGE = "cast-service"
         DOCKER_IMAGE2 = "movie-service"
-        DOCKER_TAG = "v.${BUILD_ID}.0" // tag images with the current build number
+        DOCKER_TAG = "v.${BUILD_ID}.0"
     }
-    agent any // Jenkins will be able to select all available agents
-    
+    agent any
     stages {
         stage('Print Branch') {
             steps {
                 echo "Current branch: ${env.GIT_BRANCH}"
+                // Additional debug to check the exact value
+                script {
+                    def branch = env.GIT_BRANCH ?: 'unknown'
+                    echo "Raw GIT_BRANCH value: '${branch}'"
+                    echo "Length of GIT_BRANCH: ${branch.length()}"
+                    echo "Trimmed GIT_BRANCH: '${branch.trim()}'"
+                }
             }
         }
-        stage('Docker Build Cast') { // Docker build image stage
+        stage('Docker Build Cast') {
             steps {
                 script {
                     sh '''
@@ -24,7 +30,7 @@ pipeline {
                 }
             }
         }
-        stage('Docker Build Movie') { // Docker build image stage
+        stage('Docker Build Movie') {
             steps {
                 script {
                     sh '''
@@ -35,9 +41,9 @@ pipeline {
                 }
             }
         }
-        stage('Docker Push') { // Push the built images to Docker Hub
+        stage('Docker Push') {
             environment {
-                DOCKER_PASS = credentials("DOCKER_HUB_PASS") // Retrieve Docker password from Jenkins secret
+                DOCKER_PASS = credentials("DOCKER_HUB_PASS")
             }
             steps {
                 script {
@@ -51,7 +57,7 @@ pipeline {
         }
         stage('Deploiement en dev') {
             environment {
-                KUBECONFIG = credentials("config") // Retrieve kubeconfig from Jenkins secret file
+                KUBECONFIG = credentials("config")
             }
             steps {
                 script {
@@ -61,28 +67,24 @@ pipeline {
                     ls
                     cat $KUBECONFIG > .kube/config
                     '''
-                    // Deploy castdb
                     sh '''
                     cp castdb/values.yaml castdb-values.yml
                     cat castdb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
                     helm upgrade --install castdb castdb --values=castdb-values.yml --namespace dev
                     '''
-                    // Deploy moviedb
                     sh '''
                     cp moviedb/values.yaml moviedb-values.yml
                     cat moviedb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
                     helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace dev
                     '''
-                    // Deploy cast-service
                     sh '''
                     cp cast-service/values.yaml cast-service-values.yml
                     cat cast-service-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
                     helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace dev
                     '''
-                    // Deploy movie-service
                     sh '''
                     cp movie-service/values.yaml movie-service-values.yml
                     cat movie-service-values.yml
@@ -94,7 +96,7 @@ pipeline {
         }
         stage('Deploiement en qa') {
             environment {
-                KUBECONFIG = credentials("config") // Retrieve kubeconfig from Jenkins secret file
+                KUBECONFIG = credentials("config")
             }
             steps {
                 script {
@@ -104,28 +106,24 @@ pipeline {
                     ls
                     cat $KUBECONFIG > .kube/config
                     '''
-                    // Deploy castdb
                     sh '''
                     cp castdb/values.yaml castdb-values.yml
                     cat castdb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
                     helm upgrade --install castdb castdb --values=castdb-values.yml --namespace qa
                     '''
-                    // Deploy moviedb
                     sh '''
                     cp moviedb/values.yaml moviedb-values.yml
                     cat moviedb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
                     helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace qa
                     '''
-                    // Deploy cast-service
                     sh '''
                     cp cast-service/values.yaml cast-service-values.yml
                     cat cast-service-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
                     helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace qa
                     '''
-                    // Deploy movie-service
                     sh '''
                     cp movie-service/values.yaml movie-service-values.yml
                     cat movie-service-values.yml
@@ -137,7 +135,7 @@ pipeline {
         }
         stage('Deploiement en staging') {
             environment {
-                KUBECONFIG = credentials("config") // Retrieve kubeconfig from Jenkins secret file
+                KUBECONFIG = credentials("config")
             }
             steps {
                 script {
@@ -147,28 +145,24 @@ pipeline {
                     ls
                     cat $KUBECONFIG > .kube/config
                     '''
-                    // Deploy castdb
                     sh '''
                     cp castdb/values.yaml castdb-values.yml
                     cat castdb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
                     helm upgrade --install castdb castdb --values=castdb-values.yml --namespace staging
                     '''
-                    // Deploy moviedb
                     sh '''
                     cp moviedb/values.yaml moviedb-values.yml
                     cat moviedb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
                     helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace staging
                     '''
-                    // Deploy cast-service
                     sh '''
                     cp cast-service/values.yaml cast-service-values.yml
                     cat cast-service-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
                     helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace staging
                     '''
-                    // Deploy movie-service
                     sh '''
                     cp movie-service/values.yaml movie-service-values.yml
                     cat movie-service-values.yml
@@ -180,44 +174,40 @@ pipeline {
         }
         stage('Deploiement en prod') {
             when {
-                branch 'origin/master' // Only deploy to prod from master branch
+                branch 'origin/master' // Verify this matches the exact output from Print Branch
             }
             environment {
-                KUBECONFIG = credentials("config") // Retrieve kubeconfig from Jenkins secret file
+                KUBECONFIG = credentials("config")
             }
             steps {
                 script {
-
+                    // Debug branch right before the deployment
+                    echo "Checking branch before prod deployment: ${env.GIT_BRANCH}"
                     input message: 'Deploy to production?', ok: 'Deploy'
-                    
                     sh '''
                     rm -Rf .kube
                     mkdir .kube
                     ls
                     cat $KUBECONFIG > .kube/config
                     '''
-                    // Deploy castdb
                     sh '''
                     cp castdb/values.yaml castdb-values.yml
                     cat castdb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" castdb-values.yml
                     helm upgrade --install castdb castdb --values=castdb-values.yml --namespace prod
                     '''
-                    // Deploy moviedb
                     sh '''
                     cp moviedb/values.yaml moviedb-values.yml
                     cat moviedb-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" moviedb-values.yml
                     helm upgrade --install moviedb moviedb --values=moviedb-values.yml --namespace prod
                     '''
-                    // Deploy cast-service
                     sh '''
                     cp cast-service/values.yaml cast-service-values.yml
                     cat cast-service-values.yml
                     sed -i "s+tag.*+tag: ${DOCKER_TAG}+g" cast-service-values.yml
                     helm upgrade --install cast-service cast-service --values=cast-service-values.yml --namespace prod
                     '''
-                    // Deploy movie-service
                     sh '''
                     cp movie-service/values.yaml movie-service-values.yml
                     cat movie-service-values.yml
@@ -228,5 +218,12 @@ pipeline {
             }
         }
     }
-
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
+    }
 }
